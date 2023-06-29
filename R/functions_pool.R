@@ -272,6 +272,8 @@ Pfreqs <- function(reference, alternative, coverage, min.minor, ifreqs) {
 #' @param maximum an optional integer representing the maximum coverage allowed.
 #'   Sites where the population has a depth of coverage above this threshold are
 #'   removed from the data.
+#' @param theta a value for the mutation rate assuming theta = 4Nu, where u is
+#'   the neutral mutation rate per locus.
 #'
 #' @return a data.frame with columns detailing the number of diploid
 #'   individuals, the pool error, the number of pools, the number of individuals
@@ -294,10 +296,10 @@ Pfreqs <- function(reference, alternative, coverage, min.minor, ifreqs) {
 #' mCov = 100, vCov = 250, min.minor = 2, minimum = 10, maximum = 180)
 #'
 #' @export
-maePool <- function(nDip, nloci, pools, pError, sError, mCov, vCov, min.minor, minimum = NA, maximum = NA) {
+maePool <- function(nDip, nloci, pools, pError, sError, mCov, vCov, min.minor, minimum = NA, maximum = NA, theta = 10) {
 
   # run SCRM and obtain genotypes for a single population
-  genotypes <- run_scrm(nDip = nDip, nloci = nloci)
+  genotypes <- run_scrm(nDip = nDip, nloci = nloci, theta = theta)
 
   # simulate number of reads
   reads <- simulateCoverage(mean = mCov, variance = vCov, genotypes = genotypes)
@@ -431,6 +433,8 @@ maePool <- function(nDip, nloci, pools, pError, sError, mCov, vCov, min.minor, m
 #' @param maximum an optional integer representing the maximum coverage allowed.
 #'   Sites where the population has a depth of coverage above this threshold are
 #'   removed from the data.
+#' @param theta a value for the mutation rate assuming theta = 4Nu, where u is
+#'   the neutral mutation rate per locus.
 #'
 #' @return a data.frame with columns detailing the number of diploid
 #'   individuals, the pool error, the number of pools, the number of individuals
@@ -452,7 +456,7 @@ maePool <- function(nDip, nloci, pools, pError, sError, mCov, vCov, min.minor, m
 #' mCov = c(100, 200), vCov = c(200, 500), min.minor = 1)
 #'
 #' @export
-maeFreqs <- function(nDip, nloci, pError, sError, mCov, vCov, min.minor, minimum = NA, maximum = NA) {
+maeFreqs <- function(nDip, nloci, pError, sError, mCov, vCov, min.minor, minimum = NA, maximum = NA, theta = 10) {
 
   # create a matrix to save the values of the mean absolute error for the various conditions
   final <- matrix(data = NA, nrow = 1, ncol = 7)
@@ -477,7 +481,7 @@ maeFreqs <- function(nDip, nloci, pError, sError, mCov, vCov, min.minor, minimum
 
     # compute the average absolute difference between the allele frequencies from genotypes and from Pool-seq data
     temp <- maePool(nDip = dip, nloci = nloci, pError = pError, pools = list(dip), sError = sError, mCov = meanCov,
-                    vCov = varCov, min.minor = min.minor, minimum = minimum, maximum = maximum)
+                    vCov = varCov, min.minor = min.minor, minimum = minimum, maximum = maximum, theta = theta)
 
     # add those values to the dataframe containing all the results
     final <- rbind(final, temp)
@@ -488,6 +492,167 @@ maeFreqs <- function(nDip, nloci, pError, sError, mCov, vCov, min.minor, minimum
   # output the final dataframe with the MAE values for the different parameter combinations
   final
 }
+
+
+#' Average absolute difference between allele frequencies computed from
+#' genotypes supplied by the user and from Pool-seq data
+#'
+#' Calculates the average absolute difference between the allele frequencies
+#' computed directly from genotypes and from pooled sequencing data. The
+#' genotypes used should be supplied by the user and can be simulated using
+#' different software and under the demographic model of choice.
+#'
+#' The average absolute difference is computed with the \link[Metrics]{mae}
+#' function, assuming the frequencies computed directly from the genotypes as
+#' the \code{actual} input argument and the frequencies from pooled data as the
+#' \code{predicted} input argument.
+#'
+#' Note that this functions allows for different combinations of parameters.
+#' Thus, the effect of different combinations of parameters on the average
+#' absolute difference can be tested. For instance, it is possible to check what
+#' is the effect of different coverages by including more than one value in the
+#' \code{mCov} input argument. This function will run and compute the average
+#' absolute difference for all combinations of the \code{pools}, \code{pError}
+#' and \code{mCov} input arguments.
+#'
+#' @param genotypes a list of genotypes, where each entry is a matrix
+#'   corresponding to a different locus. At each matrix, each column is a
+#'   different SNP and each row is a different individual. Genotypes should be
+#'   coded as 0, 1 or 2.
+#' @param pools a list with a vector containing the size (in number of diploid
+#'   individuals) of each pool. Thus, if a population was sequenced using a
+#'   single pool, the vector should contain only one entry. If a population was
+#'   sequenced using two pools, each with 10 individuals, this vector should
+#'   contain two entries and both will be 10.
+#' @param pError an integer representing the value of the error associated with
+#'   DNA pooling. This value is related with the unequal contribution of both
+#'   individuals and pools towards the total number of reads observed for a
+#'   given population - the higher the value the more unequal are the individual
+#'   and pool contributions.
+#' @param sError a numeric value with error rate associated with the sequencing
+#'   and mapping process. This error rate is assumed to be symmetric:
+#'   error(reference -> alternative) = error(alternative -> reference). This
+#'   number should be between 0 and 1.
+#' @param mCov an integer that defines the mean depth of coverage to simulate.
+#'   Please note that this represents the mean coverage across all sites.
+#' @param vCov an integer that defines the variance of the depth of coverage
+#'   across all sites.
+#' @param min.minor is an integer representing the minimum allowed number of
+#'   minor-allele reads. Sites that, across all populations, have less
+#'   minor-allele reads than this threshold will be removed from the data.
+#' @param minimum an optional integer representing the minimum coverage allowed.
+#'   Sites where the population has a depth of coverage below this threshold are
+#'   removed from the data.
+#' @param maximum an optional integer representing the maximum coverage allowed.
+#'   Sites where the population has a depth of coverage above this threshold are
+#'   removed from the data.
+#'
+#' @return a data.frame with columns detailing the number of diploid
+#'   individuals, the pool error, the number of pools, the number of individuals
+#'   per pool, the mean coverage, the variance of the coverage and the average
+#'   absolute difference between the frequencies computed from genotypes and
+#'   from pooled data.
+#'
+#' @examples
+#' # 100 individuals sampled at a single locus
+#' genotypes <- run_scrm(nDip = 100, nloci = 1, theta = 5)
+#' # compute the mean absolute error assuming a coverage of 100x and two pools of 50 individuals each
+#' mymae(genotypes = genotypes, pools = list(c(50, 50)), pError = 100, sError = 0.001,
+#' mCov = 100, vCov = 250, min.minor = 0)
+#'
+#' # 10 individuals sampled at 5 different loci
+#' genotypes <- run_scrm(nDip = 10, nloci = 5, theta = 5)
+#' # compute the mean absolute error assuming a coverage of 100x and one pool of 10 individuals
+#' mymae(genotypes = genotypes, pools = list(10), pError = 100, sError = 0.001,
+#' mCov = 100, vCov = 250, min.minor = 0)
+#'
+#' @export
+mymae <- function(genotypes, pools, pError, sError, mCov, vCov, min.minor, minimum = NA, maximum = NA) {
+
+  # check if the input is correct - genotypes should always be supplied as a list
+  if(any(class(genotypes) != "list"))
+    stop(paste("genotypes should be supplied on a list format, with each entry corresponding to a locus. Please check"))
+
+  # get the number of loci
+  nloci <- length(genotypes)
+
+  # get the number of individuals
+  nDip <- sum(unlist(pools))
+
+  # simulate number of reads
+  reads <- simulateCoverage(mean = mCov, variance = vCov, genotypes = genotypes)
+
+  # if the minimum coverage is defined
+  if(!is.na(minimum)) {
+
+    # check if the maximum coverage is also defined
+    if(is.na(maximum))
+      stop("please define the maximum coverage")
+
+    # remove sites with a depth of coverage above or below the defined threshold
+    reads <- remove_by_reads(nLoci = nloci, reads, minimum = minimum, maximum = maximum, genotypes = genotypes)
+
+    # get the genotypes - without sites simulated with a coverage below or above the threshold
+    genotypes <- lapply(reads, function(locus) locus[[2]])
+
+    # check the dimensions of the matrices with the genotypes
+    dimensions <- matrix(unlist(lapply(genotypes, dim)), ncol = 2, byrow = TRUE)
+    # we only wish to keep the locus where we have at least one polymorphic site
+    tokeep <- dimensions[, 2] != 0
+    # remove all loci without polymorphic sites
+    genotypes <- genotypes[tokeep]
+
+    # get the reads - without sites simulated with a coverage below or above the threshold
+    reads <- lapply(reads, function(locus) locus[[1]])
+    # use the same index to remove entries of the reads list that correspond to locus without polymorphic sites
+    reads <- reads[tokeep]
+    # ensure that each entry is a matrix
+    reads <- lapply(reads, function(locus) matrix(locus, nrow = 1))
+  }
+
+  # compute allele frequencies directly from the genotypes
+  ifreqs <- Ifreqs(nDip = nDip, genotypes = genotypes)
+
+  # simulate individual contribution to the total number of reads
+  indContribution <- lapply(1:nloci, function(locus)
+    popsReads(list_np = pools, coverage = reads[[locus]], pError = pError))
+
+  # simulate the number of reference reads
+  reference <- lapply(1:nloci, function(locus)
+    numberReferencePop(genotypes = genotypes[[locus]], indContribution = indContribution[[locus]],
+                       size = pools, error = sError))
+
+  # simulate pooled sequencing data
+  pool <- poolPops(nPops = 1, nLoci = nloci, indContribution = indContribution, readsReference = reference)
+
+  # compute the allele frequencies obtained with pooled sequencing
+  pfreqs <- lapply(1:nloci, function(locus)
+    Pfreqs(reference = pool[["reference"]][[locus]], alternative = pool[["alternative"]][[locus]],
+           coverage = pool[["total"]][[locus]], min.minor = min.minor, ifreqs = ifreqs[[locus]]))
+
+  # get the allele frequencies computed directly from genotypes after removing sites that did not pass the threshold
+  ifreqs <- lapply(pfreqs, `[[`, 1)
+  # get the allele frequencies computed from Pool-seq after removing sites that did not pass the threshold
+  pfreqs <- lapply(pfreqs, `[[`, 2)
+
+  # compute the mean absolute error for each locus
+  abs_error <- lapply(1:nloci, function(locus) Metrics::mae(actual = ifreqs[[locus]], predicted = pfreqs[[locus]]))
+  # replace any NaN values with the mean of the remaining values
+  abs_error[is.na(abs_error)] <- mean(unlist(abs_error), na.rm = TRUE)
+
+  # get the number of pools used to sequence a population
+  nPools <- length(pools[[1]])
+  # get the number of individuals per pool
+  indsPool <- unique(pools[[1]])
+
+  # create a dataframe with the values for this particular combination of parameters
+  out <- data.frame(nDip = nDip, PoolError = pError, nPools = nPools, indsPool = indsPool, mean = mCov, var = vCov,
+                    absError = unlist(abs_error))
+
+  # output the results of the function
+  out
+}
+
 
 #' Compute expected heterozygosity per site
 #'
@@ -604,6 +769,8 @@ Expected_Het <- function(Pop_Pi) {
 #' @param maximum an optional integer representing the maximum coverage allowed.
 #'   Sites where the population has a depth of coverage above this threshold are
 #'   removed from the data.
+#' @param theta a value for the mutation rate assuming theta = 4Nu, where u is
+#'   the neutral mutation rate per locus.
 #'
 #' @return a data.frame with columns detailing the number of diploid
 #'   individuals, the pool error, the number of pools, the number of individuals
@@ -626,10 +793,10 @@ Expected_Het <- function(Pop_Pi) {
 #' mCov = 100, vCov = 250, min.minor = 2, minimum = 10, maximum = 180)
 #'
 #' @export
-errorHet <- function(nDip, nloci, pools, pError, sError, mCov, vCov, min.minor, minimum = NA, maximum = NA) {
+errorHet <- function(nDip, nloci, pools, pError, sError, mCov, vCov, min.minor, minimum = NA, maximum = NA, theta = 10) {
 
   # run SCRM and obtain genotypes for a single population
-  genotypes <- run_scrm(nDip = nDip, nloci = nloci)
+  genotypes <- run_scrm(nDip = nDip, nloci = nloci, theta = theta)
 
   # simulate number of reads
   reads <- simulateCoverage(mean = mCov, variance = vCov, genotypes = genotypes)
@@ -768,6 +935,8 @@ errorHet <- function(nDip, nloci, pools, pError, sError, mCov, vCov, min.minor, 
 #' @param maximum an optional integer representing the maximum coverage allowed.
 #'   Sites where the population has a depth of coverage above this threshold are
 #'   removed from the data.
+#' @param theta a value for the mutation rate assuming theta = 4Nu, where u is
+#'   the neutral mutation rate per locus.
 #'
 #' @return a data.frame with columns detailing the number of diploid
 #'   individuals, the pool error, the number of pools, the number of individuals
@@ -789,7 +958,7 @@ errorHet <- function(nDip, nloci, pools, pError, sError, mCov, vCov, min.minor, 
 #' mCov = c(100, 200), vCov = c(200, 500), min.minor = 1)
 #'
 #' @export
-maeHet <- function(nDip, nloci, pError, sError, mCov, vCov, min.minor, minimum = NA, maximum = NA) {
+maeHet <- function(nDip, nloci, pError, sError, mCov, vCov, min.minor, minimum = NA, maximum = NA, theta = 10) {
 
   # create a matrix to save the values of the mean absolute error for the various conditions
   final <- matrix(data = NA, nrow = 1, ncol = 7)
@@ -814,7 +983,7 @@ maeHet <- function(nDip, nloci, pError, sError, mCov, vCov, min.minor, minimum =
 
     # compute the average absolute difference between the allele frequencies from genotypes and from Pool-seq data
     temp <- errorHet(nDip = dip, nloci = nloci, pError = pError, pools = list(dip), sError = sError, mCov = meanCov,
-                     vCov = varCov, min.minor = min.minor, minimum = minimum, maximum = maximum)
+                     vCov = varCov, min.minor = min.minor, minimum = minimum, maximum = maximum, theta = theta)
 
     # add those values to the dataframe containing all the results
     final <- rbind(final, temp)
@@ -1221,39 +1390,6 @@ remove_by_reads <- function(nLoci, reads, minimum, maximum, genotypes = NA) {
 }
 
 
-#' Correct alpha value
-#'
-#' This function corrects the alpha value of the Dirichlet distribution used to
-#' simulate the probability of contribution of different pools and individuals.
-#'
-#' The alpha value corresponds to the vector of shape parameters of the
-#' Dirichlet distribution. When the alpha is very small, the random generation
-#' of numbers from the Dirichlet distribution produces `NaN`. Thus, this
-#' function replaces small values of alpha with a minimum threshold value to
-#' avoid that.
-#'
-#' @param alpha_i is a vector of shape parameters for the Dirichlet
-#'   distribution.
-#'
-#' @return a vector of corrected shape parameters for the Dirichlet
-#'   distribution. Very small values are replaced by a minimum value.
-#'
-#' @keywords internal
-#'
-#' @export
-set_alpha <- function(alpha_i) {
-
-  # define threshold for the minimum alpha value
-  min.alpha <- 1e-2
-
-  # if any value of alpha_i is below the minimum allowed value, set alpha to min.alpha value
-  alpha_i[alpha_i < min.alpha] <- min.alpha
-
-  # output the alpha_i for the Dirichlet distribution
-  alpha_i
-}
-
-
 #' Probability of contribution of each pool
 #'
 #' This function computes the probability of contribution of each pool towards
@@ -1283,8 +1419,9 @@ set_alpha <- function(alpha_i) {
 #' @export
 poolProbs <- function(nPools, vector_np, nSNPs, pError) {
 
-  # Now, we need to calculate the probability of contributing for each individual - in each population
-  # This package contains a function to perform random draws from a Dirichlet distribution
+  # calculate the probability of contributing for each individual - in each population
+  # set the minimum threshold value of alpha
+  min.alpha <- 0.01
 
   # check if we are dealing with a single population - this function should be used on a single population
   # also check if the input is on the correct format
@@ -1297,22 +1434,70 @@ poolProbs <- function(nPools, vector_np, nSNPs, pError) {
     stop(paste("The nPools input is", paste(nPools), "and so, the length of the size vector should also be",
                paste(nPools, ".", sep = ""), "Please check"))
 
+  # set k - total number of pools
+  k <- nPools
   # the total number of individuals in the population (n) can be obtained by adding the individuals in all pools
   n <- sum(vector_np)
 
   # pooling error is defined in % - change this to a proportion
   pError <- pError/100
 
-  # if we use Dir(rho*np/n), then the alpha_i for Dirichlet can be written as
-  numerator <- (n - 1 - (pError^2))*vector_np
-  denominator <- n*(pError^2)
-  alpha <- numerator/denominator
+  # if pools have different sizes
+  if(length(unique(vector_np)) != 1) {
 
-  # check, and correct if needed, if any alpha_i value is above or below the threshold
-  alpha <- set_alpha(alpha_i = alpha)
+    # compute rho for the smallest pool using ns - n of the smallest pool
+    ns <- min(vector_np)
 
-  # use a Dirichlet distribution to get the probability of contribution for each pool across all sites
-  probs <- t(MCMCpack::rdirichlet(n = nSNPs, alpha = alpha))
+    # check if the error is too high for this number of pools
+    if(sqrt((n/ns)-1) < pError) {
+      # if the error is too high, replace it by a maximum pool error
+      tmp <- round((sqrt((n/ns)-1)*100) - 10)
+      # replace the error
+      pError <- sqrt((n/ns)-1) - 0.1
+      # output a warning with the new error
+      warning(paste("pError was too high. It was replaced by", tmp), call. = FALSE)
+    }
+
+    # compute rho for that pool
+    rho <- ((n/ns)-1-pError^2)/pError^2
+
+    # if we use Dir(ρ*np/n), then the alpha_i for Dirichlet can be written as
+    alpha <- rho*(vector_np/n)
+
+    # check if any alpha is negative
+    if(any(alpha < 0))
+      stop("The sum(vector_np) divided by vector_np should be larger than 1. Please check!",
+           call. = FALSE)
+
+  } else { # if all pools have the same size
+
+    # check if the error is too high for this number of pools
+    if(sqrt(k-1) < pError) {
+      # if the error is too high, replace it by a maximum pool error
+      tmp <- (sqrt(k-1)*100) - 10
+      # replace the error
+      pError <- sqrt(k-1) - 0.1
+      # output a warning with the new error
+      warning(paste("pError was too high. It was replaced by", tmp), call. = FALSE)
+    }
+
+    # calculate rho
+    rho <- ((k-1)/pError^2) - 1
+    # if we use Dir(ρ*np/n), then the alpha_i for Dirichlet can be written as
+    alpha <- rho*(vector_np/n)
+  }
+
+  # if alpha is smaller than the minimum threshold - this mainly happens with high pool errors
+  if(all(alpha < min.alpha)) {
+
+    # alternatively, use a multinomial to sample a contribution of 1 for a random pool per site
+    probs <- stats::rmultinom(n = nSNPs, size = 1, prob = rep(1, k))
+
+  } else {
+
+    # use a Dirichlet distribution to get the probability of contribution for each pool across all sites
+    probs <- t(MCMCpack::rdirichlet(n = nSNPs, alpha = alpha))
+  }
 
   # output the probability of contributing for each pool
   probs
@@ -1394,16 +1579,27 @@ poolReads <- function(nPools, coverage, probs) {
 #' @export
 indProbs <- function(np, nSNPs, pError) {
 
+  # set the minimum threshold value of alpha
+  min.alpha <- 0.01
+
   # pooling error is defined in % - change this to a proportion
   pError <- pError/100
 
-  # if we use Dir(rho/np), then the alpha_i for Dirichlet can be written as
-  numerator <- (np - 1 - (pError^2))
-  denominator <- np*(pError^2)
-  alpha <- numerator/denominator
+  # check if the error is too high for this number of individuals
+  if(sqrt(np-1) <= pError) {
+    # if the error is too high, replace it by a maximum pool error
+    tmp <- (sqrt(np-1)*100) - 10
+    # replace the error
+    pError <- sqrt(np-1) - 0.1
+    # output a warning with the new error
+    warning(paste("pError was too high. It was replaced by", tmp), call. = FALSE)
+  }
 
-  # check, and correct if needed, if any alpha_i value is above or below the threshold
-  alpha <- set_alpha(alpha_i = alpha)
+  # compute rho for individuals inside a single pool
+  rho <- ((np-1)/(pError^2)) - 1
+
+  # if we use Dir(rho/np), then the alpha_i for Dirichlet can be written as
+  alpha <- rho/np
 
   # use a dirichlet distribution to get the probability of contribution for each individual across all sites
   probs <- t(MCMCpack::rdirichlet(n = nSNPs, alpha = rep(alpha, times = np)))
@@ -2006,16 +2202,31 @@ numberReferencePop <- function(genotypes, indContribution, size, error) {
 #' @export
 poolPops <- function(nPops, nLoci, indContribution, readsReference) {
 
-  # when dealing with a single locus it's possible that the indContribution input is not on a list format
-  if(nLoci == 1) {
-    indContribution <- list(indContribution); readsReference <- list(readsReference)
-  }
+  # when dealing with a single population and a single locus
+  if(nPops == 1  && nLoci == 1) {
 
-  # number of reads with the alternative allele is simply the total number of reads per individual minus the number of reads
-  # with the reference allele for that individual
-  readsAlternative <- lapply(1:nLoci, function(locus)
-    mapply(function(individual, reference) FUN = individual - reference, SIMPLIFY = FALSE,
-           individual = indContribution[[locus]], reference = readsReference[[locus]]))
+    # number of reads with the alternative allele is simply the total number of reads per individual minus the number of reads
+    # with the reference allele for that individual
+    readsAlternative <- lapply(1:nLoci, function(locus)
+      mapply(function(individual, reference) FUN = individual - reference, SIMPLIFY = FALSE,
+             individual = indContribution[[locus]], reference = readsReference[[locus]]))
+
+  } else {
+
+    # when dealing with a single locus it's possible that the indContribution input is not on the correct format
+    if(nLoci == 1 && length(indContribution) == nPops | any(class(indContribution) != "list"))
+      indContribution <- list(indContribution)
+
+    # the same is true for the readsReference input
+    if(nLoci == 1 && length(readsReference) == nPops | any(class(readsReference) != "list"))
+      readsReference <- list(readsReference)
+
+    # number of reads with the alternative allele is simply the total number of reads per individual minus the number of reads
+    # with the reference allele for that individual
+    readsAlternative <- lapply(1:nLoci, function(locus)
+      mapply(function(individual, reference) FUN = individual - reference, SIMPLIFY = FALSE,
+             individual = indContribution[[locus]], reference = readsReference[[locus]]))
+  }
 
   # now, since each entry (each locus) has independent entries for each population, we can simple perform colSums across the
   # various entries. This will sum the number of reads (with the reference, the alternative and the total number of reads)
@@ -2057,9 +2268,6 @@ poolPops <- function(nPops, nLoci, indContribution, readsReference) {
 #'   be a different population and each column a different site. Thus, each
 #'   entry of the matrix contains the total number of observed reads for that
 #'   population at a given site.
-#' @param min.minor is an integer representing the minimum allowed number of
-#'   minor-allele reads. Sites that, across all populations, have less
-#'   minor-allele reads than this threshold will be removed from the data.
 #'
 #' @return a list with three names entries
 #'
@@ -2101,7 +2309,7 @@ poolPops <- function(nPops, nLoci, indContribution, readsReference) {
 #' coverage = pools$total[[1]])
 #'
 #' @export
-findMinor <- function(reference, alternative, coverage, min.minor = NA) {
+findMinor <- function(reference, alternative, coverage) {
 
   # set the output for the situations where there is no SNP at the locus
   # check for NAs in one of the matrices
@@ -2134,6 +2342,120 @@ findMinor <- function(reference, alternative, coverage, min.minor = NA) {
 }
 
 
+#' Filter sites according to a minor-allele reads threshold
+#'
+#' Removes sites from matrices with counts of reads. If a site has less
+#' minor-allele reads than \code{min.minor} across all populations, that site is
+#' removed from the data.
+#'
+#' @param reference a matrix with the number of reads with the reference allele.
+#'   Each row should be a different population and each column a different site.
+#' @param alternative a matrix with the number of reads with the alternative
+#'   allele. Each row should be a different population and each column a
+#'   different site.
+#' @param coverage is a matrix of total coverage. Each row of the matrix should
+#'   be a different population and each column a different site. Thus, each
+#'   entry of the matrix contains the total number of observed reads for that
+#'   population at a given site.
+#' @param min.minor is an integer representing the minimum allowed number of
+#'   minor-allele reads. Sites that, across all populations, have less
+#'   minor-allele reads than this threshold will be removed from the data.
+#'
+#' @return a list with three named entries:
+#'
+#'   \item{reference}{a list with one entry per locus. Each entry is a matrix with
+#'   the number of reference allele reads. Each column represents a different site.}
+#'
+#'   \item{alternative}{a list with one entry per locus. Each entry is a matrix with
+#'   the number of alternative allele reads. Each column represents a different site.}
+#'
+#'   \item{total}{a list with one entry per locus. Each entry is a matrix with
+#'   the total depth of coverage. Each column represents a different site.}
+#'
+#' @keywords internal
+#'
+#' @export
+filterMinor <- function(reference, alternative, coverage, min.minor) {
+
+  # check which of the two simulated alleles (reference or alternative) corresponds to the minor allele
+  tminor <- findMinor(reference = reference, alternative = alternative, coverage = coverage)
+
+  # get the total number of minor allele reads in the data
+  tminor <- colSums(tminor[["minor"]])
+  # find out in which columns the total sum of the reads with the minor allele is below the threshold
+  toremove <- tminor < min.minor
+
+  # if there are sites where the sum of the reads with the minor allele is below the threshold
+  if(sum(toremove) != 0) {
+
+    # remove those columns from the matrix containing the depth of coverage
+    coverage <- coverage[, !toremove, drop = FALSE]
+    # remove those columns from the matrix containing the number of reads with the alternative allele
+    alternative <- alternative[, !toremove, drop = FALSE]
+    # and remove those columns from the matrix containing the number of reads with the reference allele
+    reference <- reference[, !toremove, drop = FALSE]
+  }
+
+  # create the output containing the sites with reads above the min.minor threshold
+  out <- list(reference = reference, alternative = alternative, total = coverage)
+
+  # output the results of the function
+  out
+}
+
+
+#' Filter Pool-seq data according to a minor-allele reads threshold
+#'
+#' Removes sites from Pool-seq data. If a site has less minor-allele reads than
+#' \code{min.minor} across all populations, that site is removed from the data.
+#'
+#' @param pool a list containing the "reference" element, representing the
+#'   number of reads with the reference allele, the "alternative" element
+#'   representing the number of reads with the alternative allele and the
+#'   "total" element that contains information about the total number of reads.
+#' @param nloci an integer that represents the total number of independent loci
+#'   in the dataset.
+#' @param min.minor is an integer representing the minimum allowed number of
+#'   minor-allele reads. Sites that, across all populations, have less
+#'   minor-allele reads than this threshold will be removed from the data.
+#'
+#' @return a list with three named entries:
+#'
+#'   \item{reference}{a list with one entry per locus. Each entry is a matrix with
+#'   the number of reference allele reads. Each column represents a different site.}
+#'
+#'   \item{alternative}{a list with one entry per locus. Each entry is a matrix with
+#'   the number of alternative allele reads. Each column represents a different site.}
+#'
+#'   \item{total}{a list with one entry per locus. Each entry is a matrix with
+#'   the total depth of coverage. Each column represents a different site.}
+#'
+#' @keywords internal
+#'
+#' @export
+filterPool <- function(pool, nloci, min.minor) {
+
+  # check if we are using the correct input
+  if(any(names(pool) != c("reference", "alternative", "total")))
+    stop("Using an incorrect Pool-seq data list. Please check!")
+
+  # filter sites according to the number of minor allele reads
+  # keep only sites with reads above the min.minor threshold
+  pool <- lapply(1:nloci, function(locus)
+    filterMinor(reference = pool$reference[[locus]], alternative = pool$alternative[[locus]],
+                coverage = pool$total[[locus]], min.minor = min.minor))
+
+  # convert the pool list back to the correct format:
+  # one entry for reference reads, one for alternative reads and a final one for total coverage
+  pool <- list(reference = lapply(pool, function(locus) locus[["reference"]]),
+               alternative = lapply(pool, function(locus) locus[["alternative"]]),
+               total = lapply(pool, function(locus) locus[["total"]]))
+
+  # output the results of the function
+  pool
+}
+
+
 #' Calculate population frequency at each SNP
 #'
 #' The frequency at a given SNP is calculated according to: `pi = c/r`, where c
@@ -2149,7 +2471,7 @@ findMinor <- function(reference, alternative, coverage, min.minor = NA) {
 #'
 #' @param listPool a list containing the "minor" element, representing the
 #'   number of reads with the minor-allele and the "total" element that contains
-#'   information about the total number of Reads. The list should also contain a
+#'   information about the total number of reads. The list should also contain a
 #'   "major" entry with the information about reads containing the major-allele.
 #'   The output of the `poolPops` function should be used as input here.
 #' @param nLoci an integer that represents the total number of independent loci
@@ -2254,7 +2576,7 @@ calculatePi <- function(listPool, nLoci) {
 #'   extra loci were simulated, this vector informs how many loci of each
 #'   simulation type should be randomly selected.
 #'
-#' @return a list with three names entries
+#' @return a list with three named entries
 #'
 #'   \item{major}{a list with one entry per locus. Each entry is a matrix with
 #'   the number of major allele reads for each population. Each column
@@ -2297,4 +2619,617 @@ forcePool <- function(nSims, pool, target) {
 
   # output the pooled sequencing data
   pool
+}
+
+
+#' Simulate Pool-seq data
+#'
+#' Simulates pooled sequencing data given a set of parameters and individual
+#' genotypes.
+#'
+#' Note that this functions allows for different combinations of parameters.
+#' Thus, Pool-seq data can be simulated for a variety of parameters. For
+#' instance, different mean depths of coverage can be used to simulate Pool-seq
+#' data. It is also possible to simulate Pool-seq data using different pool
+#' sizes (by changing the \code{pools} input) and different values of the
+#' Pool-seq error parameter (\code{pError}).
+#'
+#' @param genotypes a list of genotypes, where each entry is a matrix
+#'   corresponding to a different locus. At each matrix, each column is a
+#'   different SNP and each row is a different individual. Genotypes should be
+#'   coded as 0, 1 or 2.
+#' @param pools a list with a vector containing the size (in number of diploid
+#'   individuals) of each pool. Thus, if a population was sequenced using a
+#'   single pool, the vector should contain only one entry. If a population was
+#'   sequenced using two pools, each with 10 individuals, this vector should
+#'   contain two entries and both will be 10.
+#' @param pError an integer representing the value of the error associated with
+#'   DNA pooling. This value is related with the unequal contribution of both
+#'   individuals and pools towards the total number of reads observed for a
+#'   given population - the higher the value the more unequal are the individual
+#'   and pool contributions.
+#' @param sError a numeric value with error rate associated with the sequencing
+#'   and mapping process. This error rate is assumed to be symmetric:
+#'   error(reference -> alternative) = error(alternative -> reference). This
+#'   number should be between 0 and 1.
+#' @param mCov an integer that defines the mean depth of coverage to simulate.
+#'   Please note that this represents the mean coverage across all sites.
+#' @param vCov an integer that defines the mean depth of coverage to simulate.
+#'   Please note that this represents the mean coverage across all sites.
+#' @param min.minor is an integer representing the minimum allowed number of
+#'   minor-allele reads. Sites that, across all populations, have less
+#'   minor-allele reads than this threshold will be removed from the data.
+#' @param minimum an optional integer representing the minimum coverage allowed.
+#'   Sites where the population has a depth of coverage below this threshold are
+#'   removed from the data.
+#' @param maximum an optional integer representing the maximum coverage allowed.
+#'   Sites where the population has a depth of coverage above this threshold are
+#'   removed from the data.
+#'
+#' @return a list with three named entries:
+#'
+#'   \item{reference}{a list with one entry per locus. Each entry is a matrix with
+#'   the number of reference allele reads. Each column represents a different site.}
+#'
+#'   \item{alternative}{a list with one entry per locus. Each entry is a matrix with
+#'   the number of alternative allele reads. Each column represents a different site.}
+#'
+#'   \item{total}{a list with one entry per locus. Each entry is a matrix with
+#'   the total depth of coverage. Each column represents a different site.}
+#'
+#' @examples
+#' # simulate Pool-seq data for 100 individuals sampled at a single locus
+#' genotypes <- run_scrm(nDip = 100, nloci = 1, theta = 5)
+#' # simulate Pool-seq data assuming a coverage of 100x and two pools of 50 individuals each
+#' simPoolseq(genotypes = genotypes, pools = c(50, 50), pError = 100, sError = 0.001,
+#' mCov = 100, vCov = 250, min.minor = 0)
+#'
+#' # simulate Pool-seq data for 10 individuals sampled at 5 loci
+#' genotypes <- run_scrm(nDip = 10, nloci = 5, theta = 5)
+#' # simulate Pool-seq data assuming a coverage of 100x and a single pool of 10 individuals
+#' simPoolseq(genotypes = genotypes, pools = 10, pError = 100, sError = 0.001,
+#' mCov = 100, vCov = 250, min.minor = 0)
+#'
+#' @export
+simPoolseq <- function(genotypes, pools, pError, sError, mCov, vCov, min.minor, minimum = NA, maximum = NA) {
+
+  # check if the input is correct - genotypes should always be supplied as a list
+  if(any(class(genotypes) != "list"))
+    stop(paste("genotypes should be supplied on a list format, with each entry corresponding to a locus. Please check"))
+
+  # check if the input is correct - pools should be a list
+  if(any(class(pools) != "list"))
+    pools <- list(pools)
+
+  # get the number of loci
+  nloci <- length(genotypes)
+
+  # get the number of individuals
+  nDip <- sum(unlist(pools))
+
+  # simulate number of reads
+  reads <- simulateCoverage(mean = mCov, variance = vCov, genotypes = genotypes)
+
+  # if the minimum coverage is defined
+  if(!is.na(minimum)) {
+
+    # check if the maximum coverage is also defined
+    if(is.na(maximum))
+      stop("please define the maximum coverage")
+
+    # remove sites with a depth of coverage above or below the defined threshold
+    reads <- remove_by_reads(nLoci = nloci, reads, minimum = minimum, maximum = maximum, genotypes = genotypes)
+
+    # get the genotypes - without sites simulated with a coverage below or above the threshold
+    genotypes <- lapply(reads, function(locus) locus[[2]])
+
+    # check the dimensions of the matrices with the genotypes
+    dimensions <- matrix(unlist(lapply(genotypes, dim)), ncol = 2, byrow = TRUE)
+    # we only wish to keep the locus where we have at least one polymorphic site
+    tokeep <- dimensions[, 2] != 0
+    # remove all loci without polymorphic sites
+    genotypes <- genotypes[tokeep]
+
+    # get the reads - without sites simulated with a coverage below or above the threshold
+    reads <- lapply(reads, function(locus) locus[[1]])
+    # use the same index to remove entries of the reads list that correspond to locus without polymorphic sites
+    reads <- reads[tokeep]
+    # ensure that each entry is a matrix
+    reads <- lapply(reads, function(locus) matrix(locus, nrow = 1))
+  }
+
+  # simulate individual contribution to the total number of reads
+  indContribution <- lapply(1:nloci, function(locus)
+    popsReads(list_np = pools, coverage = reads[[locus]], pError = pError))
+
+  # simulate the number of reference reads
+  reference <- lapply(1:nloci, function(locus)
+    numberReferencePop(genotypes = genotypes[[locus]], indContribution = indContribution[[locus]],
+                       size = pools, error = sError))
+
+  # simulate pooled sequencing data
+  pool <- poolPops(nPops = 1, nLoci = nloci, indContribution = indContribution, readsReference = reference)
+
+  # if a minimum minor-allele reads threshold is defined
+  if(min.minor != 0)
+    pool <- filterPool(pool = pool, nloci = nloci, min.minor = min.minor)
+
+  # output Pool-seq data
+  pool
+}
+
+#' Create vcf string for a single SNP
+#'
+#' Creates a string with the information for a single SNP. The information is
+#' coded as R,A:DP. R is the number of reads of the reference allele, A is the
+#' number of reads of the alternative allele and DP is the total depth of
+#' coverage.
+#'
+#' @param reference an integer representing the number of reads with the
+#'   reference allele
+#' @param alternative an integer representing the number of reads with the
+#'   alternative allele
+#' @param total an integer representing the total number of reads observed at
+#'   this SNP.
+#'
+#' @return a character string coded as R,A:DP.
+#'
+#' @keywords internal
+#'
+#' @export
+strg2vcf <- function(reference, alternative, total) {
+
+  # create a string with the information for the vcf file
+  paste(paste(reference, alternative, sep = ","), ":", total, sep = "")
+}
+
+
+#' Create vcf string for all SNPs in a single locus
+#'
+#' Creates a string with the information for all SNPs. The information is coded
+#' as R,A:DP. R is the number of reads of the reference allele, A is the number
+#' of reads of the alternative allele and DP is the total depth of coverage.
+#' Each entry of the character string corresponds to a different SNP.
+#'
+#' @param reference is a vector with the number of reads with the reference
+#'   allele. Each entry of the vector corresponds to a different SNP.
+#' @param alternative is a vector with the number of reads with the alternative
+#'   allele. Each entry of the vector corresponds to a different SNP.
+#' @param total is a vector with the total number of reads observed at each SNP.
+#'   Each entry of the vector corresponds to a different SNP.
+#'
+#' @return is a character vector with as many entries as the number of SNPs in
+#'   the locus. Each entry of this character vector contains the information for
+#'   a single SNP coded as R,A:DP.
+#'
+#' @keywords internal
+#'
+#' @export
+vcflocus <- function(reference, alternative, total) {
+
+  # check if the input is a single locus or not
+  if(any(class(reference) == "list") && length(reference) != 1)
+    stop("Data should be a single locus. Please check")
+
+  # check if the reference input is a list and unlist it if it is
+  if(any(class(reference) == "list"))
+    reference <- unlist(reference)
+  # do the same for the alternative input
+  if(any(class(alternative) == "list"))
+    alternative <- unlist(alternative)
+  # and for the total input
+  if(any(class(total) == "list"))
+    total <- unlist(total)
+
+  # get the number of SNPs in this locus
+  nSNP <- length(reference)
+
+  # create a string with the information in the format for the vcf file for each SNP
+  out <- sapply(1:nSNP, FUN = function(i)
+    strg2vcf(reference = reference[i], alternative = alternative[i], total = total[i]))
+
+  # output the string for each SNP
+  out
+}
+
+
+#' Create vcf string for all SNPs in multiple loci
+#'
+#' Creates a string with the information for all SNPs across multiple loci. The
+#' information is coded as R,A:DP. R is the number of reads of the reference
+#' allele, A is the number of reads of the alternative allele and DP is the
+#' total depth of coverage. Each entry of the character string corresponds to a
+#' different SNP and each entry of the list to a different locus.
+#'
+#' @param reference is a list where each entry corresponds to a different locus.
+#'   Each list entry is a vector with the number of reads with the reference
+#'   allele. Each entry of the vector corresponds to a different SNP.
+#' @param alternative is a list where each entry corresponds to a different
+#'   locus. Each list entry is a vector with the number of reads with the
+#'   alternative allele. Each entry of the vector corresponds to a different
+#'   SNP.
+#' @param total is a list where each entry corresponds to a different locus.
+#'   Each list entry is a vector with the total number of reads observed at each
+#'   SNP. Each entry of the vector corresponds to a different SNP.
+#'
+#' @return is a list where each entry corresponds to a different locus. Each
+#'   entry of the list is a character vector with as many entries as the number
+#'   of SNPs in the locus. Each entry of this character vector contains the
+#'   information for a single SNP coded as R,A:DP.
+#'
+#' @keywords internal
+#'
+#' @export
+vcfloci <- function(reference, alternative, total) {
+
+  # check if the input contains more than one locus or not
+  if(any(class(reference) == "list") && length(reference) == 1)
+    stop("Data should include more than one locus. Please check")
+
+  # get the number of loci in the input
+  nloci <- length(reference)
+
+  # create a string with the information in the format for the vcf file for each loci and for each SNP
+  out <- sapply(1:nloci, FUN = function(i)
+    vcflocus(reference = reference[i], alternative = alternative[i], total = total[i]))
+
+  # output the string for each loci and each SNP
+  out
+}
+
+
+#' Create vcf table with relevant information
+#'
+#' Creates a data frame in the VCF format for all SNPs and across all loci in
+#' the data set.
+#'
+#' This function combines the information coded as R,A:DP with other necessary
+#' information such as the chromosome of each SNP, the position of the SNP and
+#' the quality of the genotype among others. Note that in the character string,
+#' R is the number of reads of the reference allele, A is the number of reads of
+#' the alternative allele and DP is the total depth of coverage. Each row of the
+#' data frame corresponds to a different SNP.
+#'
+#' @param string is a character vector or a list where each entry contains a
+#'   character vector for a different locus. Each entry of this character vector
+#'   contains the information for a single SNP coded as R,A:DP. The output of
+#'   the \code{\link{vcflocus}} or \code{\link{vcfloci}} is the intended input
+#'   here.
+#' @param pos is an optional input (default is NULL). If the actual position of
+#'   the SNPs are known, they can be used as input here. When working with a
+#'   single locus, this should be a numeric vector with each entry corresponding
+#'   to the position of each SNP. If the data has multiple loci, this should be
+#'   a list where each entry is a numeric vector with the position of the SNPs
+#'   for a different locus.
+#'
+#' @return a data frame with 10 different columns
+#'
+#'   \item{chr}{Chromosome. Each locus is treated as different linkage group.}
+#'
+#'   \item{pos}{Co-ordinate. The coordinate of the SNP.}
+#'
+#'   \item{ID}{Identifier.}
+#'
+#'   \item{REF}{Reference allele. We assume that the reference allele is always
+#'   an A. Note that this is not necessarily the major allele.}
+#'
+#'   \item{ALT}{Alternative allele. We assume that the alternative allele is always
+#'   a T.}
+#'
+#'   \item{QUAL}{Quality score out of 100. We assume that this score is always
+#'   100.}
+#'
+#'   \item{FILTER}{If this SNP passed quality filters.}
+#'
+#'   \item{INFO}{Further information. Provides further information on the
+#'   variants.}
+#'
+#'   \item{FORMAT}{Information about the following columns. This column tells us
+#'   how the number of reads is coded in the next column.}
+#'
+#'   \item{pop1}{Number of reference-allele reads, alternative-allele reads and
+#'   total depth of coverage observed for this population at this SNP.}
+#'
+#' @keywords internal
+#'
+#' @export
+vcfinfo <- function(string, pos = NULL) {
+
+  # check if the string input is not a list - this should mean that we are dealing with a single locus
+  if(any(class(string) != "list")) {
+
+    # create the string with the chromosome information - this single locus corresponds to linkage group (LG) 1
+    chr <- rep("LG1", length(string))
+
+    # if no SNP positions are supplied as input
+    if(is.null(pos))
+      pos <- 1:length(string) # create a string with the information about the position of each SNP
+
+    # create a string with the ID information
+    ID <- rep(".", length(string))
+    # create a string with the base of the reference allele
+    REF <- rep("A", length(string))
+    # create a string with the base of the alternative allele
+    ALT <- rep("T", length(string))
+    # create a string with the quality information
+    QUAL <- rep(100, length(string))
+    # create a string with the filter information
+    FILTER <- rep(".", length(string))
+    # create a string with the INFO
+    INFO <- rep(".", length(string))
+    # create a string with the FORMAT
+    FORMAT <- rep("AD:DP", length(string))
+
+    # create a data frame with the information
+    out <- data.frame(chr = chr, pos = pos, ID = ID, REF = REF, ALT = ALT, QUAL = QUAL, FILTER = FILTER,
+                      INFO = INFO, FORMAT = FORMAT, pop1 = string)
+  }
+
+  # check if the string input is a list - this should mean that we are dealing with multiple loci
+  if(any(class(string) == "list")) {
+
+    # get the number of loci in the input
+    nloci <- length(string)
+
+    # create the string with the chromosome information - each locus corresponds to a linkage group (LG)
+    chr <- sapply(1:nloci, function(l) paste(rep("LG", length(string[[l]])), l, sep = ""))
+
+    # if no SNP positions are supplied as input
+    if(is.null(pos))
+      pos <- sapply(1:nloci, function(l) 1:sapply(string, length)[l])
+
+    # create a string with the ID information
+    ID <- sapply(1:nloci, function(l) rep(".", length(string[[l]])))
+    # create a string with the base of the reference allele
+    REF <- sapply(1:nloci, function(l) rep("A", length(string[[l]])))
+    # create a string with the base of the alternative allele
+    ALT <- sapply(1:nloci, function(l) rep("T", length(string[[l]])))
+    # create a string with the quality information
+    QUAL <- sapply(1:nloci, function(l) rep(100, length(string[[l]])))
+    # create a string with the filter information
+    FILTER <- sapply(1:nloci, function(l) rep(".", length(string[[l]])))
+    # create a string with the INFO
+    INFO <- sapply(1:nloci, function(l) rep(".", length(string[[l]])))
+    # create a string with the FORMAT
+    FORMAT <- sapply(1:nloci, function(l) rep("AD:DP", length(string[[l]])))
+
+    # create a data frame with the information
+    out <- data.frame(chr = unlist(chr), pos = unlist(pos), ID = unlist(ID), REF = unlist(REF), ALT = unlist(ALT), QUAL = unlist(QUAL),
+                      FILTER = unlist(FILTER), INFO = unlist(INFO), FORMAT = unlist(FORMAT), pop1 = unlist(string))
+  }
+
+  # output the vcf string together with the remaining information
+  out
+}
+
+
+#' Create VCF file from Pool-seq data
+#'
+#' Creates and saves a file with the information from Pool-seq data coded in the
+#' VCF format.
+#'
+#' It starts by converting the number of reads with the \code{reference} allele,
+#' the \code{alternative} allele and the \code{total} depth of coverage to a
+#' R,A:DP string. R is the number of reads of the reference allele, A is the
+#' number of reads of the alternative allele and DP is the total depth of
+#' coverage.
+#'
+#' Then, this information coded as R,A:DP is combined with other necessary
+#' information such as the chromosome of each SNP, the position of the SNP and
+#' the quality of the genotype among others. This creates a data frame where
+#' each row corresponds to a different SNP.
+#'
+#' A \code{file} is then created and saved in the current working directory,
+#' with the header lines that go above the table in a VCF file. Finally, the
+#' data frame is appended to that file.
+#'
+#' @param reference is a list where each entry corresponds to a different locus.
+#'   Each list entry is a vector with the number of reads with the reference
+#'   allele. Each entry of the vector corresponds to a different SNP. This list
+#'   can have a single entry if the data is comprised of a single locus.
+#' @param alternative is a list where each entry corresponds to a different
+#'   locus. Each list entry is a vector with the number of reads with the
+#'   alternative allele. Each entry of the vector corresponds to a different
+#'   SNP. This list can have a single entry if the data is comprised of a single
+#'   locus.
+#' @param total is a list where each entry corresponds to a different locus.
+#'   Each list entry is a vector with the total number of reads observed at each
+#'   SNP. Each entry of the vector corresponds to a different SNP. This list can
+#'   have a single entry if the data is comprised of a single locus.
+#' @param file is a character string naming the file to write to.
+#' @param pos is an optional input (default is NULL). If the actual position of
+#'   the SNPs are known, they can be used as input here. When working with a
+#'   single locus, this should be a numeric vector with each entry corresponding
+#'   to the position of each SNP. If the data has multiple loci, this should be
+#'   a list where each entry is a numeric vector with the position of the SNPs
+#'   for a different locus.
+#'
+#' @return a file in the current working directory containing Pool-seq data in
+#'   the VCF format.
+#'
+#' @examples
+#' # simulate Pool-seq data for 100 individuals sampled at a single locus
+#' genotypes <- run_scrm(nDip = 100, nloci = 1, theta = 5)
+#' # simulate Pool-seq data assuming a coverage of 100x and two pools of 50 individuals each
+#' pool <- simPoolseq(genotypes = genotypes, pools = c(50, 50), pError = 100, sError = 0.001,
+#' mCov = 100, vCov = 250, min.minor = 0)
+#' # create a vcf file of the simulated data - this will create a txt file
+#' # pool2vcf(reference = pool$reference, alternative = pool$alternative,
+#' # total = pool$total, file = "myvcf.txt")
+#'
+#' # simulate Pool-seq data for 10 individuals sampled at 5 loci
+#' genotypes <- run_scrm(nDip = 10, nloci = 5, theta = 5)
+#' # simulate Pool-seq data assuming a coverage of 100x and a single pool of 10 individuals
+#' pool <- simPoolseq(genotypes = genotypes, pools = 10, pError = 100, sError = 0.001,
+#' mCov = 100, vCov = 250, min.minor = 0)
+#'
+#' # create a vcf file of the simulated data - this will create a txt file
+#' # pool2vcf(reference = pool$reference, alternative = pool$alternative,
+#' # total = pool$total, file = "myvcf.txt")
+#'
+#' @export
+pool2vcf <- function(reference, alternative, total, file, pos = NULL) {
+
+  # check if the input has a single locus and use the appropriate function
+  if(any(class(reference) == "list") && length(reference) == 1)
+    vcftemp <- vcflocus(reference, alternative, total)
+
+  # check if the input has multiple loci and use the appropriate function
+  if(any(class(reference) == "list") && length(reference) != 1)
+    vcftemp <- vcfloci(reference, alternative, total)
+
+  # create a VCF table with relevant information
+  vcftemp <- vcfinfo(string = vcftemp, pos = pos)
+
+  # create the header lines to be placed above the table
+  myformat <- paste("##fileformat=VCFv4.1
+##source=\"PoolHelper R package simulation of PoolSeq data - reference coded always as A, alternative as T. QUAL set to 100\"
+##FORMAT=<ID=AD,Number=.,Type=Integer,Description=\"Allelic depths for the ref and alt alleles in the order listed\">
+##FORMAT=<ID=DP,Number=1,Type=Integer,Description=\"Approximate read depth (reads with MQ=255 or with bad mates are filtered)\">
+#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tpop1", sep = "")
+
+  # write the header of vcf file
+  write(x = myformat, file = file)
+  # append the info about each site for vcf file
+  utils::write.table(x = vcftemp, file = file, append = TRUE, quote = FALSE, row.names = FALSE, col.names = FALSE)
+}
+
+
+#' Create sync string for a single SNP
+#'
+#' Creates a string with the information for a single SNP. The information is
+#' coded as A-count:T-count:C-count:G-count:N-count:deletion-count. Note that we
+#' assume that the reference allele is always A and the alternative is always T.
+#'
+#' @param reference an integer representing the number of reads with the
+#'   reference allele.
+#' @param alternative an integer representing the number of reads with the
+#'   alternative allele.
+#'
+#' @return a character string coded as
+#'   A-count:T-count:C-count:G-count:N-count:deletion-count.
+#'
+#' @keywords internal
+#'
+#' @export
+strg2sync <- function(reference, alternative) {
+
+  # create a string with the information for the sync file
+  paste(reference, alternative, 0, 0, 0, 0, sep = ":")
+}
+
+
+#' Create 'synchronized' file from Pool-seq data
+#'
+#' Creates and saves a file with the information from Pool-seq data coded in the
+#' 'synchronized' format.
+#'
+#' It starts by converting the number of reads with the \code{reference} allele
+#' and the \code{alternative} allele to a
+#' A-count:T-count:C-count:G-count:N-count:deletion-count string. Here, we
+#' assume that the reference allele is always A and the alternative is always T.
+#'
+#' Then, this A-count:T-count:C-count:G-count:N-count:deletion-count string is
+#' combined with other necessary information such as the chromosome of each SNP,
+#' the position of the SNP and the reference character. This step creates a data
+#' frame where each row corresponds to a different SNP.
+#'
+#' A \code{file} is then created and saved in the current working directory,
+#' with the Pool-seq data coded in the 'synchronized' file format.
+#'
+#' @param reference is a list where each entry corresponds to a different locus.
+#'   Each list entry is a vector with the number of reads with the reference
+#'   allele. Each entry of the vector corresponds to a different SNP. This list
+#'   can have a single entry if the data is comprised of a single locus.
+#' @param alternative is a list where each entry corresponds to a different
+#'   locus. Each list entry is a vector with the number of reads with the
+#'   alternative allele. Each entry of the vector corresponds to a different
+#'   SNP. This list can have a single entry if the data is comprised of a single
+#'   locus.
+#' @param file is a character string naming the file to write to.
+#' @param pos is an optional input (default is NULL). If the actual position of
+#'   the SNPs are known, they can be used as input here. When working with a
+#'   single locus, this should be a numeric vector with each entry corresponding
+#'   to the position of each SNP. If the data has multiple loci, this should be
+#'   a list where each entry is a numeric vector with the position of the SNPs
+#'   for a different locus.
+#'
+#' @return a file in the current working directory containing Pool-seq data in
+#'   the 'synchronized' format.
+#'
+#' @examples
+#' # simulate Pool-seq data for 100 individuals sampled at a single locus
+#' genotypes <- run_scrm(nDip = 100, nloci = 1, theta = 5)
+#' # simulate Pool-seq data assuming a coverage of 100x and two pools of 50 individuals each
+#' pool <- simPoolseq(genotypes = genotypes, pools = c(50, 50), pError = 100, sError = 0.001,
+#' mCov = 100, vCov = 250, min.minor = 0)
+#' # create a 'synchronized' file of the simulated data - this will create a txt file
+#' # pool2sync(reference = pool$reference, alternative = pool$alternative, file = "mysync.txt")
+#'
+#' # simulate Pool-seq data for 10 individuals sampled at 5 loci
+#' genotypes <- run_scrm(nDip = 10, nloci = 5, theta = 5)
+#' # simulate Pool-seq data assuming a coverage of 100x and a single pool of 10 individuals
+#' pool <- simPoolseq(genotypes = genotypes, pools = 10, pError = 100, sError = 0.001,
+#' mCov = 100, vCov = 250, min.minor = 0)
+#'
+#' # create a 'synchronized' file of the simulated data - this will create a txt file
+#' # pool2sync(reference = pool$reference, alternative = pool$alternative, file = "mysync.txt")
+#'
+#' @export
+pool2sync <- function(reference, alternative, file, pos = NULL) {
+
+  # check if the input is a single locus or not
+  if(any(class(reference) == "list") && length(reference) == 1) {
+
+    # check if the reference input is a list and unlist it if it is
+    if(any(class(reference) == "list"))
+      reference <- unlist(reference)
+    # do the same for the alternative input
+    if(any(class(alternative) == "list"))
+      alternative <- unlist(alternative)
+
+    # create the string with the chromosome information - this single locus corresponds to linkage group (LG) 1
+    chr <- rep("LG1", length(reference))
+
+    # if no SNP positions are supplied as input
+    if(is.null(pos))
+      pos <- 1:length(reference) # create a string with the information about the position of each SNP
+
+    # create a string with the base of the reference allele
+    REF <- rep("A", length(reference))
+
+    # code the allele frequencies in the sync format
+    freqs <- sapply(1:length(reference), function(i) strg2sync(reference = reference[i], alternative = alternative[i]))
+
+    # create a data frame with the reference contig, position in the reference contig, reference character and allele frequencies
+    mydf <- data.frame(chr, pos, REF, freqs)
+  }
+
+  # if the input has more than one locus
+  if(any(class(reference) == "list") && length(reference) != 1) {
+
+    # get the number of loci in the input
+    nloci <- length(reference)
+
+    # create the string with the chromosome information - each locus corresponds to a linkage group (LG)
+    chr <- unlist(sapply(1:nloci, function(l) paste(rep("LG", length(reference[[l]])), l, sep = "")))
+
+    # if no SNP positions are supplied as input
+    if(is.null(pos))
+      pos <- unlist(sapply(1:nloci, function(l) 1:sapply(reference, length)[l]))
+
+    # create a string with the base of the reference allele
+    REF <- unlist(sapply(1:nloci, function(l) rep("A", length(reference[[l]]))))
+
+    # code the allele frequencies in the sync format
+    freqs <- unlist(sapply(1:nloci, function(l) sapply(1:length(reference[[l]]), function(i)
+      strg2sync(reference = reference[[l]][i], alternative = alternative[[l]][i]))))
+
+    # create a data frame with the reference contig, position in the reference contig,
+    # reference character and allele frequencies
+    mydf <- data.frame(chr, pos, REF, freqs)
+  }
+
+  # write the Pool-seq data in the 'synchronized' format
+  utils::write.table(x = mydf, file = file, quote = FALSE, row.names = FALSE, col.names = FALSE)
 }
